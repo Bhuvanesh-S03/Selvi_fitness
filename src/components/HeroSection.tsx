@@ -51,18 +51,19 @@ export default function HeroSection() {
         // Very slow zoom based on scroll progress
         const scale = 1 + progress * 0.15; // zooms up to 1.15x
         
-        // Use Math.round to prevent sub-pixel rendering which causes pixelation/blur
-        const imgWidth = Math.round(img.width * ratio * scale);
-        const imgHeight = Math.round(img.height * ratio * scale);
+        // Float values are REQUIRED for smooth interpolation during continuous zoom.
+        // Math.round causes pixel-snapping (jitter/breaking) during animation.
+        const imgWidth = img.width * ratio * scale;
+        const imgHeight = img.height * ratio * scale;
         
         // Center on mobile to show the person, shift right on desktop to leave room for text
         const isMobile = window.innerWidth < 768;
         const centerShift_x = isMobile 
-          ? Math.round((canvas.width - imgWidth) / 2)
-          : Math.round((canvas.width - imgWidth) + (canvas.width * 0.05));
+          ? (canvas.width - imgWidth) / 2
+          : (canvas.width - imgWidth) + (canvas.width * 0.05);
           
         // Shift slightly down as requested
-        const centerShift_y = Math.round((canvas.height - imgHeight) / 2 + (canvas.height * 0.05));
+        const centerShift_y = (canvas.height - imgHeight) / 2 + (canvas.height * 0.05);
 
         // Only draw the image. Let CSS handle the background and gradients to improve performance.
         context.clearRect(0, 0, canvas.width, canvas.height);
@@ -151,12 +152,25 @@ export default function HeroSection() {
 
   return (
     <section ref={sectionRef} className="relative w-full min-h-screen">
-      <div className="fixed inset-0 w-full h-full z-0 pointer-events-none bg-[#050505]">
+      <div className="fixed inset-0 w-full h-full z-0 pointer-events-none bg-[#050505] overflow-hidden">
         <canvas
           ref={canvasRef}
-          className="w-full h-full object-cover filter brightness-[1.15] contrast-[1.05]"
+          className="absolute inset-0 w-full h-full object-cover"
+          style={{ filter: "brightness(1.15) contrast(1.05) blur(0.5px)" }}
           aria-hidden="true"
         />
+        {/* Advanced Technique: Film Grain Noise Overlay to mask JPEG compression macro-blocking */}
+        <svg 
+          viewBox="0 0 200 200" 
+          xmlns="http://www.w3.org/2000/svg" 
+          className="absolute inset-0 w-full h-full opacity-[0.04] pointer-events-none mix-blend-overlay z-0"
+        >
+          <filter id="noiseFilter">
+            <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="3" stitchTiles="stitch" />
+          </filter>
+          <rect width="100%" height="100%" filter="url(#noiseFilter)" />
+        </svg>
+
         {/* Hardware-accelerated CSS overlays for gradients instead of canvas drawing (fixes lag) */}
         {/* Subtle left gradient to help text pop without hiding the image */}
         <div className="absolute inset-0 bg-gradient-to-r from-[#050505]/60 via-[#050505]/20 to-transparent w-[60%] md:w-[50%] z-0" aria-hidden="true"></div>
