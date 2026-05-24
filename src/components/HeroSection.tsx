@@ -19,21 +19,21 @@ export default function HeroSection() {
     const context = canvas.getContext("2d");
     if (!context) return;
 
-    // Handle high DPI displays, but cap DPR to 1.5 to prevent extreme lag on retina/4k screens
-    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-    const updateCanvasSize = () => {
-      canvas.width = window.innerWidth * dpr;
-      canvas.height = window.innerHeight * dpr;
-      
-      // Re-apply smoothing when canvas resizes
-      if (context) {
-        context.imageSmoothingEnabled = true;
-        context.imageSmoothingQuality = "high";
+    // The ultimate 4K optimization: 
+    // We let the canvas match the EXACT native resolution of the sequence frame.
+    // We then let CSS `object-fit: cover` and `transform` handle the scaling.
+    // CSS scaling uses the browser's GPU hardware bicubic/lanczos filtering,
+    // which is infinitely superior and crisper than canvas upscaling, especially on mobile!
+    const updateCanvasSize = (imgWidth: number, imgHeight: number) => {
+      if (canvas.width !== imgWidth || canvas.height !== imgHeight) {
+        canvas.width = imgWidth;
+        canvas.height = imgHeight;
+        if (context) {
+          context.imageSmoothingEnabled = true;
+          context.imageSmoothingQuality = "high";
+        }
       }
     };
-    
-    updateCanvasSize();
-    window.addEventListener("resize", updateCanvasSize);
 
     const images: HTMLImageElement[] = [];
     let imagesLoaded = 0;
@@ -41,48 +41,19 @@ export default function HeroSection() {
     const currentFrame = (index: number) =>
       `/hero-sequence/ezgif-frame-${(index + 1).toString().padStart(3, "0")}.jpg`;
 
-    const render = (index: number, progress: number = 0) => {
+    const render = (index: number) => {
       if (images[index] && images[index].complete) {
         const img = images[index];
-        const hRatio = canvas.width / img.width;
-        const vRatio = canvas.height / img.height;
-        const ratio = Math.max(hRatio, vRatio);
         
-        // Very slow zoom based on scroll progress
-        const scale = 1 + progress * 0.15; // zooms up to 1.15x
+        // Ensure canvas exactly matches the image's raw pixels
+        updateCanvasSize(img.width, img.height);
         
-        // Float values are REQUIRED for smooth interpolation during continuous zoom.
-        // Math.round causes pixel-snapping (jitter/breaking) during animation.
-        const imgWidth = img.width * ratio * scale;
-        const imgHeight = img.height * ratio * scale;
-        
-        // Center on mobile to show the person, shift right on desktop to leave room for text
-        const isMobile = window.innerWidth < 768;
-        const centerShift_x = isMobile 
-          ? (canvas.width - imgWidth) / 2
-          : (canvas.width - imgWidth) + (canvas.width * 0.05);
-          
-        // Shift slightly down as requested
-        const centerShift_y = (canvas.height - imgHeight) / 2 + (canvas.height * 0.05);
-
-        // Only draw the image. Let CSS handle the background and gradients to improve performance.
         context.clearRect(0, 0, canvas.width, canvas.height);
-        
-        // Ensure high quality smoothing before drawing
         context.imageSmoothingEnabled = true;
         context.imageSmoothingQuality = "high";
         
-        context.drawImage(
-          img,
-          0,
-          0,
-          img.width,
-          img.height,
-          centerShift_x,
-          centerShift_y,
-          imgWidth,
-          imgHeight
-        );
+        // Draw exactly 1:1 raw pixels. NO math. NO sub-pixels. Pure pristine quality.
+        context.drawImage(img, 0, 0, img.width, img.height);
       }
     };
 
@@ -97,8 +68,7 @@ export default function HeroSection() {
           img.onload = () => {
             imagesLoaded++;
             if (i === 0) {
-              updateCanvasSize(); // ensure it's sized
-              render(0, 0);
+              render(0);
             }
           };
         };
@@ -130,7 +100,13 @@ export default function HeroSection() {
               FRAME_COUNT - 1,
               Math.floor(self.progress * FRAME_COUNT)
             );
-            render(frameIndex, self.progress);
+            render(frameIndex);
+            
+            // Apply zoom via highly optimized CSS 3D transform instead of canvas redrawing!
+            if (canvasRef.current) {
+               const scale = 1 + self.progress * 0.15;
+               canvasRef.current.style.transform = `scale3d(${scale}, ${scale}, 1)`;
+            }
           });
         },
       });
@@ -145,7 +121,6 @@ export default function HeroSection() {
     });
 
     return () => {
-      window.removeEventListener("resize", updateCanvasSize);
       ctx.revert();
     };
   }, []);
@@ -155,7 +130,7 @@ export default function HeroSection() {
       <div className="fixed inset-0 w-full h-full z-0 pointer-events-none bg-[#050505] overflow-hidden">
         <canvas
           ref={canvasRef}
-          className="absolute inset-0 w-full h-full object-cover"
+          className="absolute inset-0 w-full h-full object-cover object-center md:object-[95%_center] origin-center will-change-transform"
           style={{ filter: "brightness(1.15) contrast(1.05) blur(0.5px)" }}
           aria-hidden="true"
         />
