@@ -19,11 +19,17 @@ export default function HeroSection() {
     const context = canvas.getContext("2d");
     if (!context) return;
 
-    // Handle high DPI displays
-    const dpr = window.devicePixelRatio || 1;
+    // Handle high DPI displays, but cap DPR to 1.5 to prevent extreme lag on retina/4k screens
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
     const updateCanvasSize = () => {
       canvas.width = window.innerWidth * dpr;
       canvas.height = window.innerHeight * dpr;
+      
+      // Re-apply smoothing when canvas resizes
+      if (context) {
+        context.imageSmoothingEnabled = true;
+        context.imageSmoothingQuality = "high";
+      }
     };
     
     updateCanvasSize();
@@ -45,20 +51,26 @@ export default function HeroSection() {
         // Very slow zoom based on scroll progress
         const scale = 1 + progress * 0.15; // zooms up to 1.15x
         
-        const imgWidth = img.width * ratio * scale;
-        const imgHeight = img.height * ratio * scale;
+        // Use Math.round to prevent sub-pixel rendering which causes pixelation/blur
+        const imgWidth = Math.round(img.width * ratio * scale);
+        const imgHeight = Math.round(img.height * ratio * scale);
         
         // Center on mobile to show the person, shift right on desktop to leave room for text
         const isMobile = window.innerWidth < 768;
         const centerShift_x = isMobile 
-          ? (canvas.width - imgWidth) / 2 
-          : (canvas.width - imgWidth) + (canvas.width * 0.05);
+          ? Math.round((canvas.width - imgWidth) / 2)
+          : Math.round((canvas.width - imgWidth) + (canvas.width * 0.05));
           
         // Shift slightly down as requested
-        const centerShift_y = (canvas.height - imgHeight) / 2 + (canvas.height * 0.05);
+        const centerShift_y = Math.round((canvas.height - imgHeight) / 2 + (canvas.height * 0.05));
 
         // Only draw the image. Let CSS handle the background and gradients to improve performance.
         context.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Ensure high quality smoothing before drawing
+        context.imageSmoothingEnabled = true;
+        context.imageSmoothingQuality = "high";
+        
         context.drawImage(
           img,
           0,
@@ -73,16 +85,35 @@ export default function HeroSection() {
       }
     };
 
-    // Preload
-    for (let i = 0; i < FRAME_COUNT; i++) {
-      const img = new Image();
-      img.src = currentFrame(i);
-      img.onload = () => {
-        imagesLoaded++;
-        if (i === 0) render(0, 0);
-      };
-      images.push(img);
-    }
+    // Preload progressively
+    // Load first 10 frames aggressively for immediate response, then load the rest
+    const preloadImages = () => {
+      for (let i = 0; i < FRAME_COUNT; i++) {
+        const img = new Image();
+        
+        const load = () => {
+          img.src = currentFrame(i);
+          img.onload = () => {
+            imagesLoaded++;
+            if (i === 0) {
+              updateCanvasSize(); // ensure it's sized
+              render(0, 0);
+            }
+          };
+        };
+        
+        if (i < 10) {
+          load(); // Load immediately
+        } else {
+          // Stagger the rest to prevent freezing the main thread and network
+          setTimeout(load, i * 10);
+        }
+        
+        images.push(img);
+      }
+    };
+    
+    preloadImages();
 
     let ctx = gsap.context(() => {
       // Canvas Scroll Animation (triggered over the whole page)
@@ -90,13 +121,16 @@ export default function HeroSection() {
         trigger: document.documentElement,
         start: "top top",
         end: "bottom bottom",
-        scrub: 0.5, // Reduced scrub delay for better responsiveness
+        scrub: 0.1, // Reduced scrub delay significantly for highly responsive smooth flow
         onUpdate: (self) => {
-          const frameIndex = Math.min(
-            FRAME_COUNT - 1,
-            Math.floor(self.progress * FRAME_COUNT)
-          );
-          render(frameIndex, self.progress);
+          // Use requestAnimationFrame to ensure drawing matches browser refresh rate
+          requestAnimationFrame(() => {
+            const frameIndex = Math.min(
+              FRAME_COUNT - 1,
+              Math.floor(self.progress * FRAME_COUNT)
+            );
+            render(frameIndex, self.progress);
+          });
         },
       });
 
